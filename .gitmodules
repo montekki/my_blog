@@ -1,7 +1,3 @@
 [submodule "themes/minimal"]
 	path = themes/minimal
 	url = https://github.com/calintat/minimal
-[submodule "public"]
-	path = public
-	url = git@github.com:montekki/montekki.github.io.git
-	branch = master
