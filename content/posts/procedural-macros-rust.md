@@ -32,10 +32,10 @@ Let's try to dig deeper into the latter.
 ## Procedural macros
 
 Rust's provides with a basic example of using procedural macros for
-implementing a custome ``derive`` trait. Let's take a look at it with
+implementing a custom ``derive`` trait. Let's take a look at it with
 slight modifications.
 
-First off, we have a user of our marcos, that lives in the ``user`` repo
+First off, we have a user of our macros, that lives in the ``user`` repo
 and has the following ``src/main.rs``:
 
 {{< highlight rust >}}
@@ -71,7 +71,7 @@ pub trait HelloMacro {
 To get the default implementation of this trait the procedural macro
 is defined. It lives in it's own crate inside the ``my_macro``
 crate. By convention for a crate named ``foo`` the derive macro
-implementaion has to be called ``foo_derive``, so our derive macro
+implementation has to be called ``foo_derive``, so our derive macro
 crate is called ``my_macro_derive``.
 
 The ``my_macro_derive`` crate has to be declared as a procedural macro
@@ -192,7 +192,7 @@ to ``impl_hello_marco``. In fact, ``syn::parse`` is a template function
 and it can parse ``TokenStream`` into any type that implements
 ``syn::parse::Parse`` trait.
 * [``syn::DeriveInput``](https://docs.rs/syn/0.15.26/syn/struct.DeriveInput.html)
-is used to get the name of the identificator that is stored into variable ``name``
+is used to get the name of the identifier stored into variable ``name``
 * ``name`` variable is substituted in the contents of the ``quote!`` macro
 to get the final implementation of the ``HelloMacro`` trait.
 
@@ -222,7 +222,7 @@ interpolated in the body of our ``quote`` macro.
 The code for this section can be found
 [here](https://github.com/montekki/rust_metaprogramming/commit/1842a930fd8bdbc3da647a0bb15f2029665bafbb)
 
-## Implementing a simpe serializer
+## Implementing a simple serializer
 
 Now, suppose we wanted to implement a simple serializer with the help of
 procedural macros.
@@ -381,7 +381,7 @@ fn main() {
 }
 {{< /highlight >}}
 
-Here, we have brough in the ``hexdump`` crate for more infomative
+Here, we have brought in the ``hexdump`` crate for more informative
 binary data output.
 
 When we finally run our code we will end up with the following output
@@ -422,7 +422,7 @@ error[E0599]: no method named `serialize` found for type `Tuple2` in the current
 error: aborting due to previous err
 {{< /highlight >}}
 
-We can make this error more infomative by using the ``quote_spanned!`` macro
+We can make this error more informative by using the ``quote_spanned!`` macro
 instead of a regular ``quote!``:
 
 {{< highlight rust >}}
