@@ -218,3 +218,243 @@ types inside the ``quote!`` macro:
 
 ``syn::Ident`` implements the ``quote::ToTokens`` trait so it can be
 interpolated in the body of our ``quote`` macro.
+
+The code for this section can be found
+[here](https://github.com/montekki/rust_metaprogramming/commit/1842a930fd8bdbc3da647a0bb15f2029665bafbb)
+
+## Implementing a simpe serializer
+
+Now, suppose we wanted to implement a simple serializer with the help of
+procedural macros.
+
+Let's start with adding a ``Serialize`` trait to ``my_macro/src/lib.rs``:
+
+{{< highlight rust >}}
+pub trait Serialize {
+    fn serialize(&self) -> Vec<u8>;
+}
+{{< /highlight >}}
+
+Let's add a dummy implementation of ``Serialize`` ``derive`` macro to
+
+``my_macro/my_macro_derive/src/lib.rs``:
+
+{{< highlight rust >}}
+fn serialize_encode(_data: &Data) -> proc_macro2::TokenStream {
+    quote!(println!("wip");)
+}
+
+fn impl_macro_serialize(ast: &DeriveInput) -> TokenStream {
+    let name = &ast.ident;
+
+    let encoded = serialize_encode(&ast.data);
+
+    let gen = quote! {
+    impl Serialize for #name {
+        fn serialize(&self) -> Vec<u8> {
+        let res = vec![];
+    #encoded
+        res
+        }
+    }
+    };
+    gen.into()
+}
+{{< /highlight >}}
+
+What we do here is create a dummy implementation of the ``Serialize`` trait
+that creates a vector of bytes and returns it. What we need to do is
+generate code that serializes every field in our datatype and pushes
+it to ``res``
+
+The code for this section can be found
+[here](https://github.com/montekki/rust_metaprogramming/commit/1f38774a21845f99e55f156bd042accfc8c88429)
+
+## Implementing the serializer itself
+
+Ok, so let's look at the ``data`` field of the ``syn::DeriveInput`` struct.
+
+It is an ``enum`` with the following declaration:
+
+{{< highlight rust >}}
+pub enum Data {
+    Struct(DataStruct),
+    Enum(DataEnum),
+    Union(DataUnion),
+}
+{{< /highlight >}}
+
+So, in case of a ``Struct`` we will be dealing with the ``syn::DataStruct`` type:
+
+{{< highlight rust >}}
+pub struct DataStruct {
+    pub struct_token: Struct,
+    pub fields: Fields,
+    pub semi_token: Option<Semi>,
+}
+{{< /highlight >}}
+
+Now, the ``syn::Fields`` type is itself an enum:
+
+{{< highlight rust >}}
+pub enum Fields {
+    Named(FieldsNamed),
+    Unnamed(FieldsUnnamed),
+    Unit,
+}
+{{< /highlight >}}
+
+The ``syn::FieldsUnnamed`` contains the ``unnamed`` field which contains
+all of our fields, over which we will iterate and generate the serialization
+for every of them. We will end up with the following implementation:
+
+{{< highlight rust >}}
+fn serialize_encode(data: &Data) -> proc_macro2::TokenStream {
+    match *data {
+        Data::Struct(ref data) => match data.fields {
+            Fields::Unnamed(ref fields) => {
+                let rec = fields.unnamed.iter().enumerate().map(|(i, _f)| {
+                    let self_ = quote!(self);
+                    let res = quote!(res);
+                    quote! {
+                    #res.append(&mut #self_.#i.serialize());
+                    }
+                });
+
+                quote!( #( #rec )* )
+            }
+            _ => unimplemented!(),
+        },
+        _ => unimplemented!(),
+    }
+}
+{{< /highlight >}}
+
+So, here we match only on the case when we are dealing with a struct
+with unnamed fields, over which we iterate collecting all the code together.
+
+Now, let's add a few implementations of the ``Serialize`` trait to
+``./my_macro/src/lib.rs``:
+
+{{< highlight rust >}}
+impl Serialize for String {
+    fn serialize(&self) -> Vec<u8> {
+        let mut res = (self.len() as u32).serialize();
+        res.extend_from_slice(self.as_bytes());
+        res
+    }
+}
+
+impl Serialize for u32 {
+    fn serialize(&self) -> Vec<u8> {
+        use std::mem::transmute;
+        let bytes: [u8; 4] = unsafe { transmute(self.to_be()) };
+        bytes.to_vec()
+    }
+}
+{{< /highlight >}}
+
+And try to use our new serializer in the ``user``:
+
+{{< highlight rust >}}
+extern crate hexdump;
+extern crate my_macro;
+extern crate my_macro_derive;
+
+use my_macro::{HelloMacro, Serialize};
+use my_macro_derive::{HelloMacro, Serialize};
+
+#[derive(HelloMacro)]
+struct Pancakes;
+
+#[derive(Serialize)]
+struct Tuple2(u32);
+
+#[derive(HelloMacro, Serialize)]
+struct Tuple(u32, u32, String, Tuple2);
+
+fn main() {
+    Pancakes::hello_macro();
+    let t = Tuple(42, 64, "test string".into(), Tuple2(23));
+
+    hexdump::hexdump(&t.serialize());
+}
+{{< /highlight >}}
+
+Here, we have brough in the ``hexdump`` crate for more infomative
+binary data output.
+
+When we finally run our code we will end up with the following output
+
+{{< highlight bash >}}
+my_macro/my_macro_derive/src/lib.rs:22] res.to_string() = "impl Serialize for Tuple {\nfn serialize ( & self ) -> Vec < u8 > {\nlet mut res = vec ! [  ] ; res . append ( & mut self . 0usize . serialize (  )\n) ; res . append ( & mut self . 1usize . serialize (  ) ) ; res . append (\n& mut self . 2usize . serialize (  ) ) ; res . append (\n& mut self . 3usize . serialize (  ) ) ; res } }"
+    Finished dev [unoptimized + debuginfo] target(s) in 1.18s
+     Running `target/debug/user`
+Hello, Macro! My name is Pancakes
+|0000002a 00000040 0000000b 74657374| ...\*...@....test 00000000
+|20737472 696e6700 000017|             string....      00000010
+                                                       0000001b
+{{< /highlight >}}
+
+Our serializer has successfully packed the ``Tuple`` struct to bytes.
+The code for this subsection can be found
+[here](https://github.com/montekki/rust_metaprogramming/commit/0030d3b89e0adf413270a65c0d6b54d5a9f5a016)
+
+## Using quote_spanned!
+
+If at this point we remove the ``#[derive(Serialize)]`` from ``Tuple2``
+we will end up with the following error:
+
+{{< highlight bash >}}
+error[E0599]: no method named `serialize` found for type `Tuple2` in the current scope
+  --> src/main.rs:13:22
+   |
+11 | struct Tuple2(u32);
+   | ------------------- method `serialize` not found for this
+12 | 
+13 | #[derive(HelloMacro, Serialize)]
+   |                      ^^^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `serialize`, perhaps you need to implement it:
+           candidate #1: `my_macro::Serialize`
+
+error: aborting due to previous err
+{{< /highlight >}}
+
+We can make this error more infomative by using the ``quote_spanned!`` macro
+instead of a regular ``quote!``:
+
+{{< highlight rust >}}
+let rec = fields.unnamed.iter().enumerate().map(|(i, f)| {
+                    let self_ = quote!(self);
+                    let res = quote!(res);
+                    quote_spanned! {f.span() =>
+                    #res.append(&mut #self_.#i.serialize());
+                    }
+                });
+{{< /highlight >}}
+
+In this case our error becomes more informative:
+
+{{< highlight bash >}}
+error[E0599]: no method named `serialize` found for type `Tuple2` in the current scope
+  --> src/main.rs:14:32
+   |
+11 | struct Tuple2(u32);
+   | ------------------- method `serialize` not found for this
+...
+14 | struct Tuple(u32, u32, String, Tuple2);
+   |                                ^^^^^^
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `serialize`, perhaps you need to implement it:
+           candidate #1: `my_macro::Serialize`
+
+error: aborting due to previous error
+{{< /highlight >}}
+
+So now we have the exact place where the error happened.
+
+You may found the code corresponding to this subsection
+[here](https://github.com/montekki/rust_metaprogramming/commit/286d898390f64d5353d3f690b3b7abb0ead7cd22)
